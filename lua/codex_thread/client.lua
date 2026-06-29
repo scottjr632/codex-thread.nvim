@@ -767,7 +767,7 @@ function M.resolve_thread(config, cwd, on_done)
       ok = ok,
       message = message,
       cwd = cwd,
-      thread_id = result and result.id or nil,
+      thread_id = ok and result and result.id or nil,
     })
     if timer then
       timer:stop()

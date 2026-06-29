@@ -11,7 +11,7 @@ local defaults = {
   desktop_ipc_request_timeout_ms = 15000,
   timeout_ms = 120000,
   resolve_timeout_ms = 10000,
-  resolve_thread_from_cwd = true,
+  resolve_thread_from_cwd = false,
   max_text_bytes = 40000,
   keymaps = true,
   notify_started = true,
@@ -286,7 +286,7 @@ local function send_with_message(opts, message)
 
   resolve_thread_id(function(thread_id)
     if not thread_id or thread_id == "" then
-      notify("No Codex thread id found. Set one with :CodexThreadSetId or open Neovim in a directory with a recent Codex thread.", vim.log.levels.ERROR)
+      notify("No Codex thread id found. Set one with :CodexThreadSetId or enable resolve_thread_from_cwd.", vim.log.levels.ERROR)
       log("send.no_thread_id", {})
       return
     end

@@ -47,7 +47,7 @@ active Codex threads that may contain private code, prompts, or terminal state.
 
 - Neovim 0.10 or newer.
 - Codex desktop running for the default `desktop-ipc` transport.
-- Codex CLI on `PATH` if you want cwd-based thread resolution.
+- Codex CLI on `PATH` only if you opt into cwd-based thread resolution.
 - macOS is the only environment this has been exercised on so far.
 
 ## Installation
@@ -94,7 +94,7 @@ require("codex_thread").setup({
   desktop_ipc_request_timeout_ms = 15000,
   timeout_ms = 120000,
   resolve_timeout_ms = 10000,
-  resolve_thread_from_cwd = true,
+  resolve_thread_from_cwd = false,
   max_text_bytes = 40000,
   keymaps = true,
   notify_started = true,
@@ -113,13 +113,33 @@ The plugin chooses a target thread in this order:
 1. `config.thread_id`
 2. `vim.g.codex_thread_id`
 3. `$CODEX_THREAD_ID`
-4. Most recently updated Codex thread whose `cwd` matches Neovim's current
-   working directory, resolved through `codex app-server`.
+4. If `resolve_thread_from_cwd = true`, the most recently updated Codex thread
+   whose `cwd` matches Neovim's current working directory, resolved through
+   `codex app-server`.
 
-If automatic resolution picks the wrong thread, set the thread explicitly:
+By default, cwd-based discovery is disabled because it can pick the wrong thread
+when several Codex threads are active in the same repository.
+
+Set the thread explicitly:
 
 ```vim
 :CodexThreadSetId 019...
+```
+
+Or configure a fixed thread id:
+
+```lua
+require("codex_thread").setup({
+  thread_id = "019...",
+})
+```
+
+Opt into cwd-based discovery only if that matches your workflow:
+
+```lua
+require("codex_thread").setup({
+  resolve_thread_from_cwd = true,
+})
 ```
 
 You can inspect the active target with:
@@ -135,7 +155,8 @@ You can inspect the active target with:
 - `:CodexThreadSendRef [message]` sends the file reference and line numbers only.
 - `:CodexThreadSendMessage [message]` sends only a message.
 - `:CodexThreadStatus` shows the active thread id and transport.
-- `:CodexThreadResolve` resolves and caches the thread id for the current cwd.
+- `:CodexThreadResolve` resolves and caches the thread id for the current cwd
+  when `resolve_thread_from_cwd = true`.
 - `:CodexThreadLog` opens the JSONL log file.
 - `:CodexThreadLogClear` clears the log file.
 
