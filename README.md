@@ -114,6 +114,10 @@ The plugin chooses a target thread in this order:
    whose `cwd` matches Neovim's current working directory, resolved through
    `codex app-server`.
 
+`$CODEX_THREAD_ID` is treated as an explicit thread id and is read
+automatically when present. The opt-in setting only controls cwd-based discovery
+through `codex app-server`.
+
 By default, cwd-based discovery is disabled because it can pick the wrong thread
 when several Codex threads are active in the same repository.
 
