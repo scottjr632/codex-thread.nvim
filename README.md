@@ -40,9 +40,6 @@ end
 ```
 ````
 
-Screenshots are intentionally omitted because this plugin is usually used inside
-active Codex threads that may contain private code, prompts, or terminal state.
-
 ## Requirements
 
 - Neovim 0.10 or newer.
