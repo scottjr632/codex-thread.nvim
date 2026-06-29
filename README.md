@@ -1,20 +1,54 @@
 # codex-thread.nvim
 
-Small Neovim bridge for sending the current buffer context to a Codex thread.
+Send the current Neovim buffer context to an already-open Codex desktop thread.
 
-This targets the Codex desktop app's integrated-terminal workflow. The default
-transport uses Codex desktop's internal IPC socket, so it can break if the app's
-private protocol changes.
+## Status
 
-The plugin reads `CODEX_THREAD_ID` when it exists. If the integrated terminal
-does not export that variable, it falls back to Codex app-server `thread/list`
-and uses the most recently updated thread whose `cwd` matches Neovim's current
-working directory. You can override the resolved thread for a Neovim session
-with:
+This is very, very, very experimental.
 
-```vim
-:CodexThreadSetId 019...
+The default transport talks to Codex desktop through an internal IPC socket. That
+socket and protocol are not a public API. They can change without warning, and
+this plugin may break after a Codex desktop update.
+
+Use this as a personal workflow bridge, not as a stable integration contract.
+
+## What It Is For
+
+`codex-thread.nvim` is useful when you are editing code in Neovim inside the
+Codex desktop integrated terminal and want to send context back to the visible
+Codex thread without copying and pasting.
+
+Common workflows:
+
+- Highlight a function and ask Codex what it does.
+- Send a file and line reference without sending the full code.
+- Send both the selected code and its file reference.
+- Send a short message to the current Codex thread from inside Neovim.
+
+Example message sent from a visual selection:
+
+````text
+what does this function do?
+Neovim context:
+- Reference: /path/to/project/lua/example.lua:17-42
+
+Selected text from /path/to/project/lua/example.lua:17-42:
+```lua
+local function example()
+  return true
+end
 ```
+````
+
+Screenshots are intentionally omitted because this plugin is usually used inside
+active Codex threads that may contain private code, prompts, or terminal state.
+
+## Requirements
+
+- Neovim 0.10 or newer.
+- Codex desktop running for the default `desktop-ipc` transport.
+- Codex CLI on `PATH` if you want cwd-based thread resolution.
+- macOS is the only environment this has been exercised on so far.
 
 ## Installation
 
@@ -29,11 +63,70 @@ With lazy.nvim:
 }
 ```
 
-Requirements:
+With a local checkout:
 
-- Neovim 0.10 or newer.
-- Codex CLI on `PATH` for cwd-based thread resolution.
-- Codex desktop app running for the default `desktop-ipc` transport.
+```lua
+{
+  dir = "~/path/to/codex-thread.nvim",
+  config = function()
+    require("codex_thread").setup()
+  end,
+}
+```
+
+## Setup
+
+Minimal setup:
+
+```lua
+require("codex_thread").setup()
+```
+
+Full defaults:
+
+```lua
+require("codex_thread").setup({
+  codex_bin = "codex",
+  transport = "desktop-ipc",
+  proxy_socket = nil,
+  desktop_ipc_socket = nil,
+  desktop_ipc_wait_for_start_response = false,
+  desktop_ipc_request_timeout_ms = 15000,
+  timeout_ms = 120000,
+  resolve_timeout_ms = 10000,
+  resolve_thread_from_cwd = true,
+  max_text_bytes = 40000,
+  keymaps = true,
+  notify_started = true,
+  notify_delivered = true,
+  require_user_message = true,
+  fail_if_thread_not_idle = true,
+  log_enabled = false,
+  log_file = nil,
+})
+```
+
+## Thread Resolution
+
+The plugin chooses a target thread in this order:
+
+1. `config.thread_id`
+2. `vim.g.codex_thread_id`
+3. `$CODEX_THREAD_ID`
+4. Most recently updated Codex thread whose `cwd` matches Neovim's current
+   working directory, resolved through `codex app-server`.
+
+If automatic resolution picks the wrong thread, set the thread explicitly:
+
+```vim
+:CodexThreadSetId 019...
+```
+
+You can inspect the active target with:
+
+```vim
+:CodexThreadStatus
+```
 
 ## Commands
 
@@ -55,80 +148,139 @@ All send commands prompt for a message when no message argument is provided. Use
 
 ## Keymaps
 
+When `keymaps = true`, these mappings are installed:
+
 - Visual or normal `<leader>cs`: send text and reference.
 - Visual or normal `<leader>ct`: send text only.
 - Visual or normal `<leader>cr`: send reference only.
 - Normal `<leader>cm`: send message only.
 
-In visual mode, the selected range is used. In normal mode, the current line is
-used for context commands.
+In visual mode, the selected range is used. In normal mode, context commands use
+the current line.
 
-## Setup
+## Transports
+
+### `desktop-ipc`
+
+This is the default and the only path that is expected to update the already-open
+Codex desktop thread.
+
+It connects to:
+
+```text
+$TMPDIR/codex-ipc/ipc-<uid>.sock
+```
+
+The plugin initializes with the desktop IPC router, writes a
+`thread-follower-start-turn` request, then closes the socket. Closing quickly is
+intentional: Codex desktop can broadcast large thread state snapshots over the
+same socket, and Neovim does not need to consume those responses for the common
+"send this prompt" workflow.
+
+Set this only while debugging:
+
+```lua
+desktop_ipc_wait_for_start_response = true
+```
+
+That slower mode waits for the desktop thread owner to acknowledge the
+start-turn request.
+
+### `stdio`
+
+`transport = "stdio"` starts `codex app-server --stdio` for each request. It can
+append turns to the same persisted thread data, but the visible Codex desktop UI
+may not live-refresh because this is a separate app-server process.
+
+### `proxy`
+
+The proxy transport exists for older experimentation with
+`codex app-server proxy`. It is not the default because stale or disabled control
+sockets can accept a job without producing useful delivery feedback.
+
+## Logging
+
+Logging is off by default:
+
+```lua
+log_enabled = false
+```
+
+Enable it while debugging:
 
 ```lua
 require("codex_thread").setup({
-  transport = "desktop-ipc",
-  codex_bin = "codex",
-  resolve_thread_from_cwd = true,
-  log_enabled = false,
-  desktop_ipc_wait_for_start_response = false,
-  -- log_file = vim.fn.stdpath("state") .. "/codex-thread.nvim.log",
+  log_enabled = true,
 })
 ```
 
-`transport = "desktop-ipc"` connects to the Codex desktop IPC router at
-`$TMPDIR/codex-ipc/ipc-<uid>.sock` and asks the open thread owner to start the
-turn. This is the best fit for the integrated-terminal workflow because the
-already-open desktop surface handles the message.
+The default log file is:
 
-By default, the desktop IPC path waits only for the initial `initialize`
-response, writes the start-turn request, then closes the socket. That keeps
-Neovim from reading the desktop app's large thread-stream broadcasts. Set
-`desktop_ipc_wait_for_start_response = true` only when debugging and you want
-Neovim to wait for the desktop thread owner to acknowledge the start-turn
-request.
+```lua
+vim.fn.stdpath("state") .. "/codex-thread.nvim.log"
+```
 
-`transport = "stdio"` starts `codex app-server --stdio` for each request. It can
-append turns to the same persisted thread data, but the desktop UI may not
-live-refresh because that process is not the app-server owned by the visible
-Codex window.
-
-The proxy transport exists, but a stale or disabled control socket can accept a
-job without responding, so it is not the default.
-
-Set `log_enabled = true` while debugging. The log file defaults to
-`vim.fn.stdpath("state") .. "/codex-thread.nvim.log"`.
-
-## Delivery checks
-
-For `desktop-ipc`, the default success condition is intentionally lightweight:
-the plugin initializes with the desktop IPC router, writes
-`thread-follower-start-turn`, then closes the socket. This keeps Neovim from
-reading large thread-stream broadcasts while Codex responds in the desktop app.
-
-For `stdio` and `proxy`, the plugin waits until the app-server emits a
-`userMessage` item for the target thread and then waits for the turn to complete
-or become idle.
-
-Useful log events:
-
-- `desktop_ipc.initialize.ok`: connected to the Codex desktop IPC router.
-- `desktop_ipc.start_turn.sent`: Neovim wrote the start-turn request to the
-  desktop IPC socket and closed the connection.
-- `desktop_ipc.start_turn.ok`: the open desktop thread owner accepted the turn.
-  This only appears when `desktop_ipc_wait_for_start_response = true`.
-- `desktop_ipc.send_turn.finish`: includes skipped broadcast counts/bytes for
-  the slower debug acknowledgement path. The normal desktop IPC path closes
-  before reading thread-stream broadcasts.
-- `turn.start.accepted`: Codex accepted the request, but the message is not yet
-  proven visible. This is used by the `stdio`/`proxy` transports.
-- `send_turn.user_message_seen`: Codex emitted the user message item.
-- `send.ok`: the turn completed or went idle after the user message was seen.
-- `send.failed`: the app-server exited, idled, or completed without emitting a
-  user message.
-
-Open the log with:
+Open it with:
 
 ```vim
 :CodexThreadLog
 ```
+
+Useful desktop IPC events:
+
+- `desktop_ipc.initialize.ok`: connected to the Codex desktop IPC router.
+- `desktop_ipc.start_turn.sent`: wrote the start-turn request and closed.
+- `desktop_ipc.start_turn.ok`: desktop owner acknowledged the turn. This only
+  appears when `desktop_ipc_wait_for_start_response = true`.
+- `desktop_ipc.send_turn.finish`: final result for the desktop IPC send path.
+
+Useful `stdio`/`proxy` events:
+
+- `turn.start.accepted`: Codex accepted the `turn/start` request.
+- `send_turn.user_message_seen`: app-server emitted the user message item.
+- `send.ok`: the turn completed or went idle after the user message was seen.
+- `send.failed`: the app-server exited, idled, or completed without emitting a
+  user message.
+
+## Troubleshooting
+
+If nothing appears in Codex desktop:
+
+1. Confirm the target thread:
+
+   ```vim
+   :CodexThreadStatus
+   ```
+
+2. Set it manually if needed:
+
+   ```vim
+   :CodexThreadSetId 019...
+   ```
+
+3. Enable logs and send again:
+
+   ```lua
+   require("codex_thread").setup({
+     log_enabled = true,
+   })
+   ```
+
+4. Open the log:
+
+   ```vim
+   :CodexThreadLog
+   ```
+
+If Neovim feels slow after sending, make sure
+`desktop_ipc_wait_for_start_response` is `false`. The default fast path closes
+the socket before Neovim starts reading large Codex desktop stream broadcasts.
+
+## Caveats
+
+- The default IPC protocol is private to Codex desktop.
+- The socket path can change if Codex desktop changes its IPC implementation.
+- This has mainly been tested on one macOS workflow.
+- There is no guarantee that a successful socket write means Codex will complete
+  the turn. It means the request was handed to Codex desktop IPC.
+- Public use should assume breakage and require occasional maintenance.
