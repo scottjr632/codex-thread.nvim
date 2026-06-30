@@ -14,6 +14,7 @@ local defaults = {
   resolve_thread_from_cwd = false,
   max_text_bytes = 40000,
   keymaps = true,
+  notify_sent = true,
   notify_started = true,
   notify_delivered = true,
   require_user_message = true,
@@ -26,7 +27,9 @@ local config = vim.deepcopy(defaults)
 local resolved_thread_ids_by_cwd = {}
 
 local function notify(message, level)
-  vim.notify(message, level or vim.log.levels.INFO, { title = "codex-thread.nvim" })
+  vim.schedule(function()
+    vim.notify(message, level or vim.log.levels.INFO, { title = "codex-thread.nvim" })
+  end)
 end
 
 local function log(event, fields)
@@ -293,7 +296,9 @@ local function send_with_message(opts, message)
 
     client.send_turn(config, thread_id, prompt, function(ok, result_message)
       if ok then
-        notify(result_message or "Sent to Codex.")
+        if config.notify_sent ~= false then
+          notify("Codex thread turn sent to " .. thread_id)
+        end
         log("send.ok", {
           thread_id = thread_id,
           message = result_message,

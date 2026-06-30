@@ -94,6 +94,7 @@ require("codex_thread").setup({
   resolve_thread_from_cwd = false,
   max_text_bytes = 40000,
   keymaps = true,
+  notify_sent = true,
   notify_started = true,
   notify_delivered = true,
   require_user_message = true,
@@ -219,6 +220,25 @@ may not live-refresh because this is a separate app-server process.
 The proxy transport exists for older experimentation with
 `codex app-server proxy`. It is not the default because stale or disabled control
 sockets can accept a job without producing useful delivery feedback.
+
+## Notifications
+
+By default, the plugin shows a confirmation after a successful send:
+
+```text
+Codex thread turn sent to <thread-id>
+```
+
+Disable it with:
+
+```lua
+require("codex_thread").setup({
+  notify_sent = false,
+})
+```
+
+The `stdio` and `proxy` transports can also show intermediate accepted and
+delivered notifications through `notify_started` and `notify_delivered`.
 
 ## Logging
 
